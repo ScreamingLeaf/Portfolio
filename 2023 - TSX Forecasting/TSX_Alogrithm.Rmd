@@ -1,0 +1,111 @@
+---
+title: "TSX Simluated Trading Algorithm"
+author: "Tan Lin"
+date: "2023-04-20"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+install.packages("ggplot2", repos="https://mirror.csclub.uwaterloo.ca/CRAN/")
+```
+
+## Load Data
+```{r}
+TSX = read.csv("TSX_Data.csv")
+```
+
+# Data Preparation
+## Data Types
+```{r warning=FALSE}
+#Converting Text into Dates and Numbers
+TSX[,"Date"] = as.Date(TSX[,"Date"])
+TSX[,2:7] = lapply(TSX[,2:7],as.numeric)
+
+#Check If Converted
+class(TSX[1,1])
+class(TSX[1,2])
+class(TSX[1,3])
+class(TSX[1,4])
+class(TSX[1,5])
+class(TSX[1,6])
+class(TSX[1,7])
+```
+## NA values
+```{r}
+# Check for NA Values
+apply(sapply(TSX,is.na),2,sum)
+
+# Removing records with NA
+TSX = na.omit(TSX)
+```
+
+## Train and Test Data
+```{r}
+# Selecting Dates before 2023 and after 2010 as Training Data
+TSX_train = TSX[TSX[,"Date"] < "2023-01-01",]
+TSX_train = TSX_train[TSX_train[,"Date"] >= "2020-01-01",]
+
+# Selecting the Dates after 2023 as Testing Data
+TSX_test = TSX[TSX[,"Date"] >= "2023-01-01",]
+
+plot(TSX_train$Close, type="l")
+```
+
+# Trading Simulation
+```{r}
+train_size = length(TSX_train$Close)
+money_out = rep(0,train_size)
+money_in = rep(0, train_size)
+price = TSX_train$Close
+money_out[1] = 1
+trade = 0
+
+average7 = filter(price,rep(1/7,7),sides=1)
+variance7 = rep(0,train_size)
+deviations = rep(0,train_size)
+percent_change = rep(0,train_size)
+diff = rep(0,train_size)
+
+for(i in 2:train_size){
+  #Price Change
+  percent_change[i] = price[i] / price[i-1]
+  diff[i] = price[i] - price[i-1]
+  
+  money_in[i] = money_in[i-1] * percent_change[i]
+  money_out[i] = money_out[i-1]
+  
+  #Information
+  if(i > 7){
+    variance7[i] = var(price[(i-7):(i-1)])
+    deviations[i] = (price[i]-average7[i]) / sqrt(variance7[i])
+    
+      if(deviations[i] > 2)
+        {
+          trade = 1
+      }
+      if(deviations[i] < -2)
+        {
+          trade = -1
+        }
+  }
+  
+
+  
+  #Trade
+  if(trade == 1){
+    money_in[i] = money_out[i] + money_in[i]
+    money_out[i] = 0
+  }
+  if(trade == -1)
+  {
+    money_out[i] = money_in[i] + money_out[i]
+    money_in[i] = 0
+    data
+  }
+  trade = 0
+}
+data = data.frame(1:train_size,price,average7,diff,percent_change,variance7,deviations,money_in,money_out)
+data
+```
+

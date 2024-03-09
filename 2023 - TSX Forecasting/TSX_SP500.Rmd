@@ -1,0 +1,103 @@
+---
+title: "TSX"
+author: "Tan Lin"
+date: "2023-04-20"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Install Packages
+```{r}
+#install.packages("ggplot2")
+```
+
+
+## Load Data
+```{r}
+TSX = read.csv("TSX_Data.csv")
+SP500 = read.csv("SP500.csv")
+```
+
+# Data Preparation
+## Data Types
+```{r warning=FALSE}
+#Converting Text into Dates and Numbers
+TSX[,"Date"] = as.Date(TSX[,"Date"])
+TSX[,2:7] = lapply(TSX[,2:7],as.numeric)
+
+SP500[,"Date"] = as.Date(SP500[,"Date"])
+SP500$Close = as.numeric(SP500$Close)
+
+#Check If Converted
+class(TSX[1,1])
+class(TSX[1,2])
+class(TSX[1,3])
+class(TSX[1,4])
+class(TSX[1,5])
+class(TSX[1,6])
+class(TSX[1,7])
+
+class(SP500[1,1])
+class(SP500[1,2])
+```
+## NA values
+```{r}
+# Check for NA Values
+apply(sapply(TSX,is.na),2,sum)
+apply(sapply(SP500,is.na),2,sum)
+
+# Removing records with NA
+TSX = na.omit(TSX)
+SP500 = na.omit(SP500)
+
+TSX = TSX[,c("Date","Close")]
+```
+
+```{r}
+library(dplyr)
+colnames(SP500) = c("Date","SP500")
+colnames(TSX) = c("Date","TSX")
+merged = left_join(SP500,TSX,by="Date")
+merged = merged[,c("Date","TSX","SP500")]
+merged = na.omit(merged)
+```
+
+
+## Train and Test Data
+```{r}
+# Selecting Dates before 2023 and after 2010 as Training Data
+merged_train = merged[merged[,"Date"] < "2020-01-01",]
+merged_train = merged_train[merged_train[,"Date"] >= "2015-01-01",]
+
+# Selecting the Dates after 2023 as Testing Data
+merged_test = merged[merged[,"Date"] >= "2020-01-01",]
+
+plot(merged_train$TSX, type="l")
+```
+
+# Calculated Statistics
+```{r}
+for(i in 2:length(merged_train$Date)){
+  merged_train[i,"TSX_diff"] = merged_train[i,"TSX"] - merged_train[i-1,"TSX"]
+  merged_train[i,"SP500_diff"] = merged_train[i,"SP500"] - merged_train[i-1,"SP500"]
+  
+  # 7-Day Variances
+  if(i > 7)
+  {
+    merged_train[i,"TSX_var7"] = var(merged_train[(i-7):i,"TSX"])
+  }
+}
+```
+
+```{r}
+means = c(0,0,0,0,0,0,0,0,0,0)
+for(i in 0:18)
+{
+  means[i+1] = mean(na.omit(merged_train[merged_train$TSX_var7 > quantile(na.omit(merged_train$TSX_var7),0.05*i),"TSX_diff"][12:2201]))
+}
+```
+
+

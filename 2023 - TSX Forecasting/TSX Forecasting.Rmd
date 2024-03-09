@@ -1,0 +1,243 @@
+---
+title: "TSX Simulated Trading Algorithm"
+author: "Tan Lin"
+date: "2023-04-20"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#TODO
+# 1. Make a system for automatically testing algorithms.
+# 2. Clean up the end.
+```
+
+```{r}
+#Installing Packages and Loading Libraries
+install.packages("ggplot2", repos="https://mirror.csclub.uwaterloo.ca/CRAN/")
+install.packages("foreacst", repos="https://mirror.csclub.uwaterloo.ca/CRAN/")
+install.packages("rugarch", repos="https://mirror.csclub.uwaterloo.ca/CRAN/")
+install.packages("tseries", repos="https://mirror.csclub.uwaterloo.ca/CRAN/")
+library(ggplot2)
+library(forecast)
+```
+
+
+## Load Data
+```{r}
+TSX = read.csv("TSX_Data.csv")
+```
+
+# Data Preparation
+## Data Types
+```{r warning=FALSE}
+#Converting Text into Dates and Numbers
+TSX[,"Date"] = as.Date(TSX[,"Date"])
+TSX[,2:7] = lapply(TSX[,2:7],as.numeric)
+
+#Check If Converted
+class(TSX[1,1])
+class(TSX[1,2])
+class(TSX[1,3])
+class(TSX[1,4])
+class(TSX[1,5])
+class(TSX[1,6])
+class(TSX[1,7])
+```
+## NA values
+```{r}
+# Check for NA Values
+apply(sapply(TSX,is.na),2,sum)
+
+# Removing records with NA
+TSX = na.omit(TSX)
+```
+
+## Train and Test Data
+```{r}
+# Only Use 5 Years worth of Data
+TSX = TSX[TSX[,"Date"] > "2018-01-01",]
+
+# Selecting Dates before 2023 as Training Data
+TSX_train = TSX[TSX[,"Date"] < "2023-01-01",]
+
+# Selecting the Dates after 2023 as Testing Data
+TSX_test = TSX[TSX[,"Date"] >= "2023-01-01",]
+```
+
+
+# Predicting Closing Values
+## Model 1: Simple Linear Regression
+```{r}
+# Creating the Model
+model_1 = lm(Close ~ Date, TSX_train)
+
+# Evaluating Model Performance
+SSE_1 = sum((fitted(model_1) - TSX_train[,"Close"])^2)
+# Used Log of SSE for readability
+log(SSE_1,10)
+
+#Visualizing Results
+data = data.frame(TSX_train[,"Date"],TSX_train[,"Close"], fitted(model_1))
+colnames(data) = c("Date","Actual", "Fitted")
+ggplot(data) + geom_line(aes(x=data$Date, y=data$Fitted)) + geom_line(aes(x=data$Date, y=data$Actual))
+```
+
+## Model 2: Logarithmic Regression
+```{r}
+
+# Creating the Model
+model_2 = lm(log(Close) ~ Date, TSX_train)
+
+# Evaluating Model Performance
+SSE_2 = sum((TSX_train[,"Close"] - exp(fitted(model_2)))^2)
+log(SSE_2,10)
+
+# Visualizing Results
+data = data.frame(TSX_train[,"Date"],TSX_train[,"Close"],exp(fitted(model_2)))
+colnames(data) = c("Date","Actual", "Fitted")
+ggplot(data) + geom_line(aes(x=data$Date, y=data$Fitted)) + geom_line(aes(x=data$Date, y=data$Actual))
+```
+
+
+## Model 3: Moving Average
+```{r}
+# Converting Close into a Time Series
+closing = as.ts(TSX_train[,"Close"])
+
+# Creating the Model
+model_3 = arima(closing, order = c(0,0,7))
+# Evaluating Model Performance
+SSE_3 = sum(model_3$residuals^2)
+# Used Log of SSE for readability
+log(SSE_3,10)
+
+#Visualizing Results
+data = data.frame(TSX_train[,"Date"],TSX_train[,"Close"],TSX_train[,"Close"] + model_3$residuals)
+colnames(data) = c("Date","Actual", "Fitted")
+ggplot(data) + geom_line(aes(x=Date, y=Fitted)) + geom_line(aes(x=Date, y=Actual),color='blue')
+```
+
+## Model 4: ARMA
+```{r}
+# Converting Close into a Time Series
+closing = as.ts(TSX_train[,"Close"])
+
+#De-trending Data
+length(closing)
+x = 1:length(closing)
+
+#Linear De-trended
+fit = lm(closing ~ x)
+linear_detrender = (fit$coefficients[1] + fit$coefficients[2]*x)
+plot(linear_detrender)
+
+#Log De-trended
+fit = lm(log(closing) ~ x)
+log_detrender = exp(fit$coefficients[1] + fit$coefficients[2]*x)
+plot(log_detrender)
+
+#Select Detrending Method
+detrended = closing - log_detrender
+detrended_2 = TSX_test$Close - exp(predict(fit,newdata=data.frame(1256:1428)))
+
+#Analysis of Variance
+library("tseries")
+acf(detrended)
+pacf(detrended)
+
+# Creating the Model
+model_4 = arima(detrended, order = c(1,0,0))
+# Evaluating Model Performance
+SSE_4 = sum(model_4$residuals^2)
+# Used Log of SSE for readability
+log(SSE_4,10)
+
+#Visualizing Results
+data = data.frame(TSX_train[,"Date"],detrended,detrended + model_4$residuals)
+colnames(data) = c("Date","Actual", "Fitted")
+ggplot(data) + geom_line(aes(x=Date, y=Fitted)) + geom_line(aes(x=Date, y=Actual),color='blue')
+```
+# Short Term Algorithm based on AR Model
+```{r}
+fit = arima(detrended, order = c(3,0,0))
+#Visualizing Predictions
+data = data.frame(TSX_train[,"Date"],TSX_train[,"Close"],TSX_train[,"Close"] + fit$residuals)
+colnames(data) = c("Date","Actual", "Fitted")
+ggplot(data[TSX_train$Date > "2022-09-01",]) + geom_line(aes(x=Date, y=Fitted)) + geom_line(aes(x=Date, y=Actual),color='blue')
+```
+
+```{r}
+#Based on Training Data
+money_in = 0
+money_out = 1
+data$money_in = rep(0,length(TSX_train$Close))
+data$money_out = rep(0,length(TSX_train$Close))
+trades = 0
+for(x in 1:(length(TSX_train$Close)-1)){
+  #Simulate Trade
+  if(data$Fitted[x+1] > data$Actual[x]){
+    #Buy
+    if(money_in == 0)
+      {
+      trades = trades + 1
+      }
+    money_in = money_in + money_out
+    money_out = 0
+  }
+  else
+  {
+    #Sell
+    if(money_out == 0)
+      {
+      trades = trades + 1
+    }
+    money_out = money_in + money_out
+    money_in = 0
+  }
+  data$money_in[x] = money_in
+  data$money_out[x] = money_out
+  #Change in Value
+  money_in = money_in * data$Actual[x+1]/data$Actual[x]
+}
+money_in+money_out
+data$Actual[x+1]/data$Actual[1]
+trades
+```
+
+```{r}
+#Based on Test Data
+refit = Arima(detrended_2,model=fit)
+pred = refit$fitted + TSX_test$Close
+
+test_data = data.frame(TSX_test[,"Date"],TSX_test[,"Close"],pred)
+colnames(test_data) = c("Date","Actual", "Fitted")
+money_in = 0
+money_out = 1
+trades = 0
+for(x in 1:(length(TSX_test$Close)-1)){
+  #Simulate Trade
+  if(test_data$Fitted[x+1] > test_data$Actual[x]){
+    #Buy
+    if(money_in == 0){trades = trades + 1}
+    money_in = money_in + money_out
+    money_out = 0
+  }
+  else
+  {
+    #Sell
+    if(money_out == 0){trades = trades + 1}
+    money_out = money_in + money_out
+    money_in = 0
+  }
+  #Change in Value
+  money_in = money_in * test_data$Actual[x+1]/test_data$Actual[x]
+}
+money_in+money_out
+test_data$Actual[x+1]/test_data$Actual[1]
+trades
+```
+
+
+

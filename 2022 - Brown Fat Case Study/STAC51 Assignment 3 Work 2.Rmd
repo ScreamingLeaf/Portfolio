@@ -1,0 +1,28 @@
+---
+title: "Untitled"
+output: html_document
+date: '2022-03-22'
+---
+```{r}
+PayYes = c(24,10,5,16,7,47,45, 57,54,59)
+PayNo = c(9,3,4,7,4,12,8,9,10,12)
+District = rep(c("NC", "NE", "NW", "SE", "SW"),2)
+Race = c(rep("Blacks",5), rep("Whites",5))
+data = data.frame(Race, District, PayYes, PayNo)
+```
+
+## Part A
+We reject the null hypothesis that merit pay increase is independent of race because the confidence interval for the effect of race does not include 1.
+We get the likelihood ratio test from difference in deviances between the two models and get a very high p-value so we reject the null hypothesis that merit pay increases are independent of race.
+```{r}
+fit = glm(PayYes ~ Race + District,data=data)
+summary(fit)
+z = qnorm(0.975,0,1)
+CI_w = 40 + c(-1,1)*z*5.505
+CI_w
+
+drop1(fit, test="Chisq")
+pchisq(4303-303,1)
+```
+
+
